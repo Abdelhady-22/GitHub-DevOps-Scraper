@@ -1,0 +1,123 @@
+# ══════════════════════════════════════════════════
+# scraper_config.yaml — configure everything here
+# ══════════════════════════════════════════════════
+
+# ── Repos ──────────────────────────────────────────
+repos:
+  - owner: kubernetes
+    repo: kubernetes
+    bug_labels: "kind/bug"
+    exclude_labels: [wontfix, invalid, duplicate, kind/feature, kind/cleanup, kind/documentation, lifecycle/stale, lifecycle/rotten]
+    category: kubernetes
+
+  - owner: grafana
+    repo: grafana
+    bug_labels: "type/bug"
+    exclude_labels: [wontfix, invalid, duplicate, type/feature-request, stale]
+    category: application
+
+  - owner: prometheus
+    repo: prometheus
+    bug_labels: "kind/bug"
+    exclude_labels: [wontfix, invalid, duplicate, kind/feature, stale]
+    category: infrastructure
+
+  - owner: helm
+    repo: helm
+    bug_labels: "bug"
+    exclude_labels: [wontfix, invalid, duplicate, feature, stale]
+    category: kubernetes
+
+  - owner: docker
+    repo: compose
+    bug_labels: "kind/bug"
+    exclude_labels: [wontfix, invalid, duplicate, kind/feature]
+    category: infrastructure
+
+  - owner: istio
+    repo: istio
+    bug_labels: "kind/bug"
+    exclude_labels: [wontfix, invalid, duplicate, kind/feature, lifecycle/stale]
+    category: infrastructure
+
+  - owner: redis
+    repo: redis
+    bug_labels: "bug"
+    exclude_labels: [wontfix, invalid, duplicate]
+    category: database
+
+  - owner: nginx
+    repo: nginx
+    bug_labels: "bug"
+    exclude_labels: [wontfix, invalid, duplicate]
+    category: infrastructure
+
+
+# ── Tokens ─────────────────────────────────────────
+tokens:
+  file: "tokens.txt"       # one GitHub token per line
+  min_remaining: 50        # switch token below this
+  request_delay: 0.25      # seconds between API calls
+
+
+# ── Discovery (Phase 1) ────────────────────────────
+discovery:
+  since: "2020-01-01T00:00:00Z"
+  min_body_length: 150
+  title_reject_prefixes: ["feat:", "feature:", "chore:", "docs:", "refactor:", "test:", "ci:", "build:", "bump ", "[feature]", "[rfc]", "proposal:", "rfc:"]
+  title_reject_words: ["typo", "documentation", "readme", "spelling", "add support for", "please add", "suggestion"]
+  bot_logins: ["github-actions[bot]", "dependabot[bot]", "renovate[bot]", "k8s-ci-robot", "k8s-triage-robot", "fejta-bot"]
+
+
+# ── Enrichment (Phase 2) ───────────────────────────
+enrichment:
+  checkpoint_every: 10
+
+
+# ── Classification (Phase 3) ───────────────────────
+classification:
+  batch_size: 20
+  llm_min_confidence: 0.70
+  min_body_score: 2
+  open_min_comments: 2
+  open_min_reactions: 1
+  title_negative_words: ["add support", "feature request", "how to", "how do i", "could we", "please add", "suggestion", "enhancement", "refactor", "cleanup"]
+
+
+# ── LLM ────────────────────────────────────────────
+# provider: "openai" | "anthropic" | "ollama"
+llm:
+  provider: "ollama"
+
+  # Ollama settings (local)
+  ollama_base_url: "http://localhost:11434"
+  ollama_classification_model: "llama3.1:8b"    # fast model for batch classify
+  ollama_extraction_model: "llama3.1:8b"        # can use larger: llama3.1:70b
+
+  # OpenAI settings
+  openai_classification_model: "gpt-4o-mini"
+  openai_extraction_model: "gpt-4o"
+
+  # Anthropic settings
+  anthropic_classification_model: "claude-haiku-4-5-20251001"
+  anthropic_extraction_model: "claude-sonnet-4-6"
+
+  min_extraction_confidence: 7   # out of 10
+  max_body_chars: 6000
+  max_pr_body_chars: 2000
+
+
+# ── Output dirs ────────────────────────────────────
+output:
+  raw_dir: "raw"
+  staging_dir: "staging"
+  processed_dir: "processed"
+  progress_file: "progress.json"
+
+
+# ── Skip phases ────────────────────────────────────
+run_phases:
+  phase1_discovery: true
+  phase2_enrichment: true
+  phase3_classification: true
+  phase4_extraction: true
