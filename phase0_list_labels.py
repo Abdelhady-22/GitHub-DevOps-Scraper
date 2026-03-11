@@ -2,7 +2,7 @@
 phase0_list_labels.py
 ─────────────────────
 Shows all labels for every repo in config.
-first to confirm bug_labels settings are correct.
+Run first to confirm bug_labels settings are correct.
 
 Usage:
   python phase0_list_labels.py                         # all repos
@@ -15,18 +15,21 @@ from pathlib import Path
 from config import cfg
 from token_manager import TokenManager
 from github_client import GitHubClient
+from logger import get_logger
+
+log = get_logger("phase0")
 
 
-def show_labels(client, owner, repo, configured_bug_labels):
-    print(f"\n{'═'*55}")
-    print(f"  {owner}/{repo}")
-    print(f"  configured bug_labels: '{configured_bug_labels}'")
-    print(f"{'═'*55}")
+def show_labels(client: GitHubClient, owner: str, repo: str, configured_bug_labels: str) -> None:
+    log.info(f"{'═' * 55}")
+    log.info(f"  {owner}/{repo}")
+    log.info(f"  configured bug_labels: '{configured_bug_labels}'")
+    log.info(f"{'═' * 55}")
 
     try:
         labels = client.list_labels(owner, repo)
     except Exception as e:
-        print(f"  ERROR: {e}")
+        log.error(f"Failed to fetch labels for {owner}/{repo}: {e}")
         return
 
     all_names = {l["name"] for l in labels}
@@ -40,28 +43,27 @@ def show_labels(client, owner, repo, configured_bug_labels):
         groups.setdefault(prefix, []).append(name)
 
     for prefix, names in sorted(groups.items()):
-        print(f"\n  [{prefix}]  ({len(names)} labels)")
+        log.info(f"  [{prefix}]  ({len(names)} labels)")
         for name in names:
             marker = "  ◄ BUG LABEL (configured)" if name in configured else ""
-            print(f"    {name}{marker}")
+            log.info(f"    {name}{marker}")
 
     # Validation
-    print()
     for lbl in configured:
         if lbl in all_names:
-            print(f"  ✓  '{lbl}' exists")
+            log.info(f"  ✓  '{lbl}' exists")
         else:
-            print(f"  ✗  '{lbl}' NOT FOUND — fix bug_labels in scraper_config.yaml!")
+            log.warning(f"  ✗  '{lbl}' NOT FOUND — fix bug_labels in scraper_config.yaml!")
 
     # Save to file
     out = cfg.raw_dir / f"{owner}_{repo}"
     out.mkdir(parents=True, exist_ok=True)
     (out / "labels.json").write_text(json.dumps(labels, indent=2))
-    print(f"\n  Saved full list → {out}/labels.json")
+    log.info(f"  Saved full list → {out}/labels.json")
 
 
 def main():
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(description="List and validate GitHub repo labels")
     parser.add_argument("--repo", help="owner/repo to check (default: all from config)")
     args = parser.parse_args()
 
@@ -73,13 +75,13 @@ def main():
         owner, repo = args.repo.split("/")
         repos = [r for r in repos if r.owner == owner and r.repo == repo]
         if not repos:
-            print(f"'{args.repo}' not found in scraper_config.yaml")
+            log.error(f"'{args.repo}' not found in scraper_config.yaml")
             return
 
     for r in repos:
         show_labels(client, r.owner, r.repo, r.bug_labels)
 
-    print("\n\nDone. If any label shows ✗, update bug_labels in scraper_config.yaml before running phase1.")
+    log.info("Done. If any label shows ✗, update bug_labels in scraper_config.yaml before running phase1.")
 
 
 if __name__ == "__main__":

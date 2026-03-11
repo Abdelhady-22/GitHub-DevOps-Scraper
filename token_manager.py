@@ -1,9 +1,13 @@
 """token_manager.py — rotate GitHub tokens, handle rate limits"""
 
+import os
 import time
 import threading
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from config import cfg
+from logger import get_logger
+
+log = get_logger("tokens")
 
 
 @dataclass
@@ -13,10 +17,10 @@ class Token:
     remaining: int = 5000
     reset_at: float = 0.0
 
-    def exhausted(self):
+    def exhausted(self) -> bool:
         return self.remaining < cfg.min_remaining
 
-    def wait_seconds(self):
+    def wait_seconds(self) -> float:
         return max(0.0, self.reset_at - time.time())
 
 
@@ -24,13 +28,31 @@ class TokenManager:
     def __init__(self):
         self._lock = threading.Lock()
         self._tokens: list[Token] = []
-        with open(cfg.token_file) as f:
-            lines = [l.strip() for l in f if l.strip() and not l.startswith("#")]
+
+        # Try environment variable first, then fall back to file
+        env_tokens = os.environ.get("GITHUB_TOKENS", "").strip()
+        if env_tokens:
+            lines = [t.strip() for t in env_tokens.split(",") if t.strip()]
+            log.info(f"Loaded {len(lines)} token(s) from GITHUB_TOKENS env var")
+        else:
+            token_path = cfg.token_file
+            try:
+                with open(token_path, encoding="utf-8") as f:
+                    lines = [line.strip() for line in f if line.strip() and not line.startswith("#")]
+            except FileNotFoundError:
+                raise FileNotFoundError(
+                    f"Token file '{token_path}' not found and GITHUB_TOKENS env var is not set. "
+                    f"Create '{token_path}' with one token per line or set GITHUB_TOKENS=ghp_xxx,ghp_yyy"
+                )
+            log.info(f"Loaded {len(lines)} token(s) from {token_path}")
+
         if not lines:
-            raise ValueError(f"No tokens in {cfg.token_file}")
+            raise ValueError(
+                f"No tokens found. Add tokens to '{cfg.token_file}' or set GITHUB_TOKENS env var."
+            )
+
         for i, v in enumerate(lines, 1):
             self._tokens.append(Token(value=v, label=f"token-{i}"))
-        print(f"[tokens] loaded {len(self._tokens)} token(s)")
 
     def headers(self) -> tuple[dict, Token]:
         """Return (headers, token). Blocks if all exhausted."""
@@ -46,20 +68,23 @@ class TokenManager:
         available = [t for t in self._tokens if not t.exhausted()]
         if available:
             return max(available, key=lambda t: t.remaining)
+
         soonest = min(self._tokens, key=lambda t: t.reset_at)
         wait = soonest.wait_seconds() + 5
-        print(f"[tokens] all exhausted, sleeping {wait:.0f}s...")
+        log.warning(f"All tokens exhausted, sleeping {wait:.0f}s until reset...")
         time.sleep(wait)
         for t in self._tokens:
             t.remaining = 5000
         return self._tokens[0]
 
-    def update(self, headers: dict, token: Token):
+    def update(self, headers: dict, token: Token) -> None:
         with self._lock:
-            if r := headers.get("X-RateLimit-Remaining"):
-                token.remaining = int(r)
-            if r := headers.get("X-RateLimit-Reset"):
-                token.reset_at = float(r)
+            remaining = headers.get("X-RateLimit-Remaining")
+            if remaining:
+                token.remaining = int(remaining)
+            reset = headers.get("X-RateLimit-Reset")
+            if reset:
+                token.reset_at = float(reset)
 
-    def status(self):
+    def status(self) -> str:
         return " | ".join(f"{t.label}:{t.remaining}" for t in self._tokens)

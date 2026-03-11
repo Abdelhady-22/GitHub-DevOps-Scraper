@@ -1,0 +1,16 @@
+services:
+  scraper:
+    build: .
+    container_name: devops-scraper
+    volumes:
+      - ./tokens.txt:/app/tokens.txt:ro
+      - ./scraper_config.yaml:/app/scraper_config.yaml:ro
+      - ./raw:/app/raw
+      - ./staging:/app/staging
+      - ./processed:/app/processed
+      - ./logs:/app/logs
+    env_file:
+      - .env
+    # Override to run specific phases or repos:
+    # command: ["python", "run_all.py", "--repo", "kubernetes/kubernetes"]
+    # command: ["python", "run_all.py", "--phases", "3", "4"]

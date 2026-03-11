@@ -4,6 +4,9 @@ import time
 import requests
 from token_manager import TokenManager
 from config import cfg
+from logger import get_logger
+
+log = get_logger("github")
 
 BASE = "https://api.github.com"
 
@@ -22,20 +25,28 @@ class GitHubClient:
                 time.sleep(cfg.request_delay)
                 r = self.session.get(url, headers=headers, params=params, timeout=30)
                 self.tm.update(dict(r.headers), token)
+
                 if r.status_code == 200:
                     return r
+
                 if r.status_code == 429:
                     wait = int(r.headers.get("Retry-After", 60))
-                    print(f"[429] sleeping {wait}s...")
+                    log.warning(f"Rate limited (429), sleeping {wait}s...")
                     time.sleep(wait)
                     continue
+
                 if r.status_code == 403 and "rate limit" in r.text.lower():
+                    log.warning(f"Rate limit hit (403), retrying in 5s...")
                     time.sleep(5)
                     continue
+
+                log.debug(f"HTTP {r.status_code} for {url}")
                 return r
+
             except (requests.Timeout, requests.ConnectionError) as e:
-                print(f"[{type(e).__name__}] retry {attempt+1}/{retries}")
+                log.warning(f"{type(e).__name__} on attempt {attempt + 1}/{retries}: {url}")
                 time.sleep(5 * (attempt + 1))
+
         raise RuntimeError(f"Failed after {retries} retries: {url}")
 
     def paginated(self, url: str, params: dict = None):
@@ -50,29 +61,29 @@ class GitHubClient:
                 break
             params["page"] += 1
 
-    def list_labels(self, owner, repo):
+    def list_labels(self, owner: str, repo: str) -> list[dict]:
         items = []
         for page, _ in self.paginated(f"{BASE}/repos/{owner}/{repo}/labels"):
             items.extend(page)
         return items
 
-    def list_issues(self, owner, repo, state, labels, since):
+    def list_issues(self, owner: str, repo: str, state: str, labels: str, since: str):
         return self.paginated(
             f"{BASE}/repos/{owner}/{repo}/issues",
             {"state": state, "labels": labels, "since": since, "sort": "updated", "direction": "desc"},
         )
 
-    def get_issue(self, owner, repo, number):
+    def get_issue(self, owner: str, repo: str, number: int) -> dict | None:
         r = self._get(f"{BASE}/repos/{owner}/{repo}/issues/{number}")
         return r.json() if r.status_code == 200 else None
 
-    def get_timeline(self, owner, repo, number):
+    def get_timeline(self, owner: str, repo: str, number: int) -> list[dict]:
         items = []
         for page, _ in self.paginated(f"{BASE}/repos/{owner}/{repo}/issues/{number}/timeline"):
             items.extend(page)
         return items
 
-    def get_pr(self, owner, repo, number):
+    def get_pr(self, owner: str, repo: str, number: int) -> dict | None:
         r = self._get(f"{BASE}/repos/{owner}/{repo}/pulls/{number}")
         return r.json() if r.status_code == 200 else None
 

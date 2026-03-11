@@ -9,9 +9,13 @@ Usage:
 import json
 import argparse
 from pathlib import Path
-from datetime import datetime
-from config import cfg
+from datetime import datetime, timezone
+from config import cfg, Repo
+from schemas import validate_closed_entry, validate_open_entry
 import llm
+from logger import get_logger
+
+log = get_logger("phase4")
 
 
 CLOSED_PROMPT = """Extract a DevOps incident RAG entry from this GitHub issue and its fix PR.
@@ -62,19 +66,26 @@ Respond ONLY in JSON, no markdown fences:
 """
 
 
-def trunc(text, n): return (text or "")[:n] + ("\n[truncated]" if len(text or "") > n else "")
+def trunc(text: str, n: int) -> str:
+    """Truncate text to n characters with indicator."""
+    text = text or ""
+    if len(text) > n:
+        return text[:n] + "\n[truncated]"
+    return text
 
 
-def extract_closed(number, candidate, repo):
+def extract_closed(number: int, candidate: dict, repo: Repo) -> dict | None:
+    """Extract a structured RAG entry from a closed issue + PR."""
     idir = cfg.raw_dir / repo.slug / "closed" / "issues"
     pdir = cfg.raw_dir / repo.slug / "closed" / "prs"
 
     ip = idir / f"issue_{number}.json"
     mp = idir / f"meta_{number}.json"
-    if not ip.exists(): return None
+    if not ip.exists():
+        return None
 
     issue = json.loads(ip.read_text())
-    meta  = json.loads(mp.read_text()) if mp.exists() else {}
+    meta = json.loads(mp.read_text()) if mp.exists() else {}
     pr_number = meta.get("pr")
 
     pr_title = pr_body = ""
@@ -83,31 +94,38 @@ def extract_closed(number, candidate, repo):
         if pp.exists():
             pr = json.loads(pp.read_text())
             pr_title = pr.get("title", "")
-            pr_body  = trunc(pr.get("body") or "", cfg.max_pr_body_chars)
+            pr_body = trunc(pr.get("body") or "", cfg.max_pr_body_chars)
 
     prompt = CLOSED_PROMPT.format(
-        title=issue.get("title",""),
+        title=issue.get("title", ""),
         body=trunc(issue.get("body") or "", cfg.max_body_chars),
-        pr_title=pr_title, pr_body=pr_body,
+        pr_title=pr_title,
+        pr_body=pr_body,
     )
 
     try:
         raw = llm.call(prompt, mode="extraction")
         ext = llm.parse_json(raw)
     except Exception as e:
-        print(f"    #{number} LLM error: {e}"); return None
+        log.error(f"#{number} LLM error: {e}")
+        return None
 
-    if not ext or not isinstance(ext, dict): return None
-    if ext.get("confidence_in_extraction", 0) < cfg.min_extraction_confidence: return None
+    if not ext or not isinstance(ext, dict):
+        log.warning(f"#{number} LLM returned non-dict or empty response")
+        return None
+
+    if ext.get("confidence_in_extraction", 0) < cfg.min_extraction_confidence:
+        log.debug(f"#{number} below confidence threshold ({ext.get('confidence_in_extraction', 0)})")
+        return None
 
     base = f"https://github.com/{repo.full_name}"
-    return {
+    entry = {
         "source_repo": repo.full_name,
         "source_issue": number,
         "source_pr": pr_number,
         "source_url": f"{base}/issues/{number}",
         "source_pr_url": f"{base}/pull/{pr_number}" if pr_number else None,
-        "scraped_at": datetime.utcnow().isoformat() + "Z",
+        "scraped_at": datetime.now(timezone.utc).isoformat(),
         "problem_signature": ext.get("problem_signature", ""),
         "problem_description": ext.get("problem_description", ""),
         "error_indicators": ext.get("error_indicators", []),
@@ -131,14 +149,24 @@ def extract_closed(number, candidate, repo):
         "pr_merged_at": meta.get("merged_at", ""),
     }
 
+    # Validate against schema
+    is_valid, error = validate_closed_entry(entry)
+    if not is_valid:
+        log.warning(f"#{number} schema validation failed: {error}")
+        return None
 
-def extract_open(number, candidate, repo):
+    return entry
+
+
+def extract_open(number: int, candidate: dict, repo: Repo) -> dict | None:
+    """Extract a problem entry from an open issue (no fix)."""
     ip = cfg.raw_dir / repo.slug / "open" / "issues" / f"issue_{number}.json"
-    if not ip.exists(): return None
+    if not ip.exists():
+        return None
 
     issue = json.loads(ip.read_text())
     prompt = OPEN_PROMPT.format(
-        title=issue.get("title",""),
+        title=issue.get("title", ""),
         body=trunc(issue.get("body") or "", cfg.max_body_chars),
     )
 
@@ -146,16 +174,22 @@ def extract_open(number, candidate, repo):
         raw = llm.call(prompt, mode="extraction")
         ext = llm.parse_json(raw)
     except Exception as e:
-        print(f"    #{number} LLM error: {e}"); return None
+        log.error(f"#{number} LLM error: {e}")
+        return None
 
-    if not ext or not isinstance(ext, dict): return None
-    if ext.get("confidence_in_extraction", 0) < cfg.min_extraction_confidence: return None
+    if not ext or not isinstance(ext, dict):
+        log.warning(f"#{number} LLM returned non-dict or empty response")
+        return None
 
-    return {
+    if ext.get("confidence_in_extraction", 0) < cfg.min_extraction_confidence:
+        log.debug(f"#{number} below confidence threshold ({ext.get('confidence_in_extraction', 0)})")
+        return None
+
+    entry = {
         "source_repo": repo.full_name,
         "source_issue": number,
         "source_url": f"https://github.com/{repo.full_name}/issues/{number}",
-        "scraped_at": datetime.utcnow().isoformat() + "Z",
+        "scraped_at": datetime.now(timezone.utc).isoformat(),
         "problem_signature": ext.get("problem_signature", ""),
         "problem_description": ext.get("problem_description", ""),
         "error_indicators": ext.get("error_indicators", []),
@@ -178,81 +212,112 @@ def extract_open(number, candidate, repo):
         "issue_created_at": issue.get("created_at", ""),
     }
 
+    # Validate against schema
+    is_valid, error = validate_open_entry(entry)
+    if not is_valid:
+        log.warning(f"#{number} schema validation failed: {error}")
+        return None
 
-def run_repo(repo):
+    return entry
+
+
+def run_repo(repo: Repo) -> dict:
+    """Process all candidates for a repo. Returns stats dict."""
     slug = repo.slug
+    stats = {"closed_ok": 0, "closed_skip": 0, "open_ok": 0, "open_skip": 0}
+
     for state in ["closed", "open"]:
         cp = cfg.staging_dir / slug / state / "candidates.jsonl"
         if not cp.exists():
-            print(f"  [{repo.full_name}:{state}] no candidates, skipping"); continue
+            log.info(f"[{repo.full_name}:{state}] no candidates, skipping")
+            continue
 
         out_dir = cfg.processed_dir / slug
         out_dir.mkdir(parents=True, exist_ok=True)
         out_path = out_dir / f"{state}_entries.jsonl"
 
-        # already done
+        # Load already-done issue numbers
         done = set()
         if out_path.exists():
             for line in out_path.open():
-                try: done.add(json.loads(line).get("source_issue"))
-                except: pass
+                try:
+                    done.add(json.loads(line).get("source_issue"))
+                except json.JSONDecodeError:
+                    pass
 
         candidates = []
         for line in cp.open():
             try:
                 c = json.loads(line)
-                if c.get("number") not in done: candidates.append(c)
-            except: pass
+                if c.get("number") not in done:
+                    candidates.append(c)
+            except json.JSONDecodeError:
+                pass
 
-        print(f"  [{repo.full_name}:{state}] {len(candidates)} to extract ({len(done)} done)")
+        log.info(f"[{repo.full_name}:{state}] {len(candidates)} to extract ({len(done)} done)")
         fn = extract_closed if state == "closed" else extract_open
         ok = skip = 0
 
         with open(out_path, "a") as out_f:
             for i, cand in enumerate(candidates, 1):
                 n = cand["number"]
-                try: entry = fn(n, cand, repo)
+                try:
+                    entry = fn(n, cand, repo)
                 except Exception as e:
-                    print(f"    #{n} error: {e}"); skip += 1; continue
+                    log.error(f"#{n} extraction error: {e}")
+                    skip += 1
+                    continue
 
                 if entry:
-                    out_f.write(json.dumps(entry) + "\n"); out_f.flush(); ok += 1
+                    out_f.write(json.dumps(entry) + "\n")
+                    out_f.flush()
+                    ok += 1
                 else:
                     skip += 1
 
                 if i % 20 == 0:
-                    print(f"    [{i}/{len(candidates)}] ok={ok} skip={skip}")
+                    log.info(f"  [{i}/{len(candidates)}] ok={ok} skip={skip}")
 
-        print(f"  [{repo.full_name}:{state}] DONE — extracted={ok} skipped={skip}")
+        log.info(f"[{repo.full_name}:{state}] DONE — extracted={ok} skipped={skip}")
+
+        if state == "closed":
+            stats["closed_ok"] = ok
+            stats["closed_skip"] = skip
+        else:
+            stats["open_ok"] = ok
+            stats["open_skip"] = skip
+
+    return stats
 
 
 def main():
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(description="Extract structured RAG entries via LLM")
     parser.add_argument("--repo", help="owner/repo (default: all)")
     args = parser.parse_args()
 
-    print(f"Phase 4 — Extraction  [{datetime.now():%Y-%m-%d %H:%M:%S}]")
-    print(f"LLM: {cfg.llm_provider} / {cfg.extraction_model()}")
+    log.info(f"Phase 4 — Extraction  [{datetime.now():%Y-%m-%d %H:%M:%S}]")
+    log.info(f"LLM: {cfg.llm_provider} / {cfg.extraction_model()}")
     if not cfg.phase_enabled("phase4_extraction"):
-        print("Disabled in config. Skipping."); return
+        log.info("Disabled in config. Skipping.")
+        return
 
     repos = cfg.repos
     if args.repo:
         repos = [r for r in repos if r.full_name == args.repo]
 
     for repo in repos:
-        print(f"\n── {repo.full_name}")
+        log.info(f"── {repo.full_name}")
         run_repo(repo)
 
-    print("\n── Final counts:")
+    log.info("── Final counts:")
     for repo in repos:
         for state in ["closed", "open"]:
             p = cfg.processed_dir / repo.slug / f"{state}_entries.jsonl"
             if p.exists():
                 n = sum(1 for _ in p.open())
-                print(f"  {repo.full_name}/{state}: {n:,}")
+                log.info(f"  {repo.full_name}/{state}: {n:,}")
 
-    print("\nDone. Import processed/**/*.jsonl into Qdrant.")
+    log.info("Done. Import processed/**/*.jsonl into Qdrant.")
 
 
 if __name__ == "__main__":

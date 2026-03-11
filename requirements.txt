@@ -1,5 +1,7 @@
 requests>=2.31.0
 pyyaml>=6.0
+python-dotenv>=1.0.0
+pydantic>=2.0.0
 
 # only needed for the provider you pick in scraper_config.yaml:
 # openai>=1.0.0

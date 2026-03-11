@@ -1,0 +1,31 @@
+# Output directories
+raw/
+staging/
+processed/
+logs/
+
+# Progress & tokens
+progress.json
+tokens.txt
+
+# Environment
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
