@@ -3,7 +3,6 @@ services:
     build: .
     container_name: devops-scraper
     volumes:
-      - ./tokens.txt:/app/tokens.txt:ro
       - ./scraper_config.yaml:/app/scraper_config.yaml:ro
       - ./raw:/app/raw
       - ./staging:/app/staging

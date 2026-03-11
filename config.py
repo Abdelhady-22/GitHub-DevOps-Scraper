@@ -45,7 +45,7 @@ class Repo:
 _REQUIRED_SECTIONS = ["repos", "tokens", "discovery", "enrichment", "classification", "llm", "output", "run_phases"]
 
 _REQUIRED_KEYS = {
-    "tokens": ["file", "min_remaining", "request_delay"],
+    "tokens": ["min_remaining", "request_delay"],
     "discovery": ["since", "min_body_length", "title_reject_prefixes", "title_reject_words", "bot_logins"],
     "enrichment": ["checkpoint_every"],
     "classification": ["batch_size", "llm_min_confidence", "min_body_score", "open_min_comments", "open_min_reactions", "title_negative_words"],
@@ -95,9 +95,6 @@ class Config:
         self.repos = [Repo(**{k: v for k, v in r.items()}) for r in raw["repos"]]
 
     # tokens
-    @property
-    def token_file(self) -> str:
-        return self._r["tokens"]["file"]
 
     @property
     def min_remaining(self) -> int:

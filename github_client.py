@@ -63,8 +63,8 @@ class GitHubClient:
 
     def list_labels(self, owner: str, repo: str) -> list[dict]:
         items = []
-        for page, _ in self.paginated(f"{BASE}/repos/{owner}/{repo}/labels"):
-            items.extend(page)
+        for batch, _ in self.paginated(f"{BASE}/repos/{owner}/{repo}/labels"):
+            items.extend(batch)
         return items
 
     def list_issues(self, owner: str, repo: str, state: str, labels: str, since: str):
@@ -79,8 +79,8 @@ class GitHubClient:
 
     def get_timeline(self, owner: str, repo: str, number: int) -> list[dict]:
         items = []
-        for page, _ in self.paginated(f"{BASE}/repos/{owner}/{repo}/issues/{number}/timeline"):
-            items.extend(page)
+        for batch, _ in self.paginated(f"{BASE}/repos/{owner}/{repo}/issues/{number}/timeline"):
+            items.extend(batch)
         return items
 
     def get_pr(self, owner: str, repo: str, number: int) -> dict | None:

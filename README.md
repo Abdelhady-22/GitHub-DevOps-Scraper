@@ -115,31 +115,19 @@ You need at least one GitHub Personal Access Token. More tokens = higher through
 4. Copy the token
 5. Repeat for additional tokens (5 tokens = 25,000 requests/hour)
 
-**Option A — tokens.txt file:**
+**Set tokens in your `.env` file:**
 
-Create a file called `tokens.txt` in the project directory with one token per line:
-
-```
-ghp_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-ghp_yyyyyyyyyyyyyyyyyyyyyyyyyyyyyy
-ghp_zzzzzzzzzzzzzzzzzzzzzzzzzzzzzz
-```
-
-**Option B — .env file:**
-
-Copy `.env.example` to `.env` and set your tokens as a comma-separated list:
+Copy `.env.example` to `.env`:
 
 ```bash
 cp .env.example .env
 ```
 
-Then edit `.env`:
+Then edit `.env` and add your tokens (comma-separated):
 
 ```env
 GITHUB_TOKENS=ghp_xxx,ghp_yyy,ghp_zzz
 ```
-
-> **Note:** If both `tokens.txt` and `GITHUB_TOKENS` env var are set, the env var takes priority.
 
 ### 2. LLM Provider
 
@@ -307,7 +295,6 @@ The `docker-compose.yml` mounts these directories:
 
 | Container path | Host path | Purpose |
 |---|---|---|
-| `/app/tokens.txt` | `./tokens.txt` | GitHub tokens (read-only) |
 | `/app/scraper_config.yaml` | `./scraper_config.yaml` | Config (read-only) |
 | `/app/raw` | `./raw` | Raw scraped data |
 | `/app/staging` | `./staging` | Intermediate classified data |
@@ -404,8 +391,8 @@ These entries are designed to be imported directly into a vector database like *
 ## Troubleshooting
 
 ### "No tokens found" error
-- Make sure `tokens.txt` exists with at least one valid token, **OR**
-- Set `GITHUB_TOKENS=ghp_xxx` in your `.env` file
+- Set `GITHUB_TOKENS=ghp_xxx,ghp_yyy` in your `.env` file
+- Make sure the `.env` file is in the project root directory
 
 ### "Config file not found" error
 - Make sure `scraper_config.yaml` is in the same directory as the scripts

@@ -1,4 +1,4 @@
-"""token_manager.py — rotate GitHub tokens, handle rate limits"""
+"""token_manager.py — rotate GitHub tokens from .env, handle rate limits"""
 
 import os
 import time
@@ -29,30 +29,28 @@ class TokenManager:
         self._lock = threading.Lock()
         self._tokens: list[Token] = []
 
-        # Try environment variable first, then fall back to file
+        # Load tokens from GITHUB_TOKENS env var (set in .env file)
         env_tokens = os.environ.get("GITHUB_TOKENS", "").strip()
-        if env_tokens:
-            lines = [t.strip() for t in env_tokens.split(",") if t.strip()]
-            log.info(f"Loaded {len(lines)} token(s) from GITHUB_TOKENS env var")
-        else:
-            token_path = cfg.token_file
-            try:
-                with open(token_path, encoding="utf-8") as f:
-                    lines = [line.strip() for line in f if line.strip() and not line.startswith("#")]
-            except FileNotFoundError:
-                raise FileNotFoundError(
-                    f"Token file '{token_path}' not found and GITHUB_TOKENS env var is not set. "
-                    f"Create '{token_path}' with one token per line or set GITHUB_TOKENS=ghp_xxx,ghp_yyy"
-                )
-            log.info(f"Loaded {len(lines)} token(s) from {token_path}")
+        if not env_tokens:
+            raise ValueError(
+                "GITHUB_TOKENS environment variable is not set.\n"
+                "Set it in your .env file:\n"
+                "  GITHUB_TOKENS=ghp_xxx,ghp_yyy,ghp_zzz\n"
+                "Or export it directly:\n"
+                "  export GITHUB_TOKENS=ghp_xxx"
+            )
 
+        lines = [t.strip() for t in env_tokens.split(",") if t.strip()]
         if not lines:
             raise ValueError(
-                f"No tokens found. Add tokens to '{cfg.token_file}' or set GITHUB_TOKENS env var."
+                "GITHUB_TOKENS is set but contains no valid tokens.\n"
+                "Format: GITHUB_TOKENS=ghp_xxx,ghp_yyy"
             )
 
         for i, v in enumerate(lines, 1):
             self._tokens.append(Token(value=v, label=f"token-{i}"))
+
+        log.info(f"Loaded {len(self._tokens)} token(s) from GITHUB_TOKENS env var")
 
     def headers(self) -> tuple[dict, Token]:
         """Return (headers, token). Blocks if all exhausted."""

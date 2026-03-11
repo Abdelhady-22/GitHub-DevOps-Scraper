@@ -4,11 +4,11 @@ staging/
 processed/
 logs/
 
-# Progress & tokens
+# Progress
 progress.json
-tokens.txt
+run_summary.json
 
-# Environment
+# Environment & secrets
 .env
 
 # Python

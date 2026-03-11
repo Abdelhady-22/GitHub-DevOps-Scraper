@@ -54,8 +54,9 @@ repos:
 
 
 # ── Tokens ─────────────────────────────────────────
+# Tokens are loaded from the GITHUB_TOKENS env var (set in .env file)
+# Example: GITHUB_TOKENS=ghp_xxx,ghp_yyy,ghp_zzz
 tokens:
-  file: "tokens.txt"       # one GitHub token per line
   min_remaining: 50        # switch token below this
   request_delay: 0.25      # seconds between API calls
 
